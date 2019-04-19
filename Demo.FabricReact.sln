@@ -1,0 +1,33 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 15
+VisualStudioVersion = 15.0.28307.168
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{9092AA53-FB77-4645-B42D-1CCCA6BD08BD}") = "Demo.FabricReact.UX", "Demo.FabricReact.UX\Demo.FabricReact.UX.njsproj", "{FD7C58DF-8161-4B39-BC20-37EA5CA90D93}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Demo.FabricReact.SPAddIn", "Demo.FabricReact.SPAddIn\Demo.FabricReact.SPAddIn.csproj", "{C0506ABE-CE01-4795-9897-D6A60DBC4D4F}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{FD7C58DF-8161-4B39-BC20-37EA5CA90D93}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FD7C58DF-8161-4B39-BC20-37EA5CA90D93}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FD7C58DF-8161-4B39-BC20-37EA5CA90D93}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FD7C58DF-8161-4B39-BC20-37EA5CA90D93}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C0506ABE-CE01-4795-9897-D6A60DBC4D4F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C0506ABE-CE01-4795-9897-D6A60DBC4D4F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C0506ABE-CE01-4795-9897-D6A60DBC4D4F}.Debug|Any CPU.Deploy.0 = Debug|Any CPU
+		{C0506ABE-CE01-4795-9897-D6A60DBC4D4F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C0506ABE-CE01-4795-9897-D6A60DBC4D4F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C0506ABE-CE01-4795-9897-D6A60DBC4D4F}.Release|Any CPU.Deploy.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {CECE8A1C-34C4-4E6D-9319-9DB892497C8D}
+	EndGlobalSection
+EndGlobal

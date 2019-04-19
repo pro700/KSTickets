@@ -1,0 +1,11 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<package dslVersion="1.0.0.0" 
+        Id="5a12ad3e-2e98-4db5-9f69-1e2f541c7578" 
+        solutionId="5a12ad3e-2e98-4db5-9f69-1e2f541c7578" 
+        xmlns="http://schemas.microsoft.com/VisualStudio/2008/SharePointTools/PackageModel" 
+        name="Demo.FabricReact.SPAddIn"
+        sharePointProductVersion="16.0">
+  <features>
+        <featureReference itemId="a538b84a-8234-4a0b-a29c-0c10becbf4a2" />
+  </features>
+</package>

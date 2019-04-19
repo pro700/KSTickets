@@ -1,0 +1,8 @@
+{
+  "compilerOptions": {
+    "jsx": "react",
+    "target": "es5",
+    "charset": "utf8",
+    "lib": [ "dom", "es5", "es2015.promise" ]
+  }
+}
