@@ -5,7 +5,7 @@ import * as ReactDOM from "react-dom";
 
 import 'jquery';
 
-import { TicketTableParams } from "./TicketTable";
+import { TicketTableParams, TicketTableMode } from "./TicketTable";
 
 import { sp, Web, ItemAddResult, ItemUpdateResult, EmailProperties } from '@pnp/sp';
 import { CurrentUser } from "@pnp/sp/src/siteusers";
@@ -14,6 +14,7 @@ import { PermissionKind, BasePermissions } from "@pnp/sp";
 import { Spinner, SpinnerSize, DefaultButton, Callout, getId } from "office-ui-fabric-react";
 import { Dropdown, DropdownMenuItemType, IDropdownStyles, IDropdownOption } from 'office-ui-fabric-react';
 import { TooltipHost, ITooltipHostProps } from 'office-ui-fabric-react/lib/Tooltip';
+
 
 import { mergeStyleSets, FontWeights, DefaultPalette, getTheme } from 'office-ui-fabric-react/lib/Styling';
 //import { initializeIcons } from 'office-ui-fabric-react/icons';
@@ -58,7 +59,13 @@ export interface TicketTableRowProps {
         Seats: number,
         Comments: string,
         etag: string
-    }
+    },
+    rowRef?: React.RefObject<TicketTableRow>,
+    BookingChangedCallback?: (playId: string) => {},
+    StatusChangedCallback?: (playId: string) => {},
+    MessageCallback?: (msg: string, err: string, scs: string) => {},
+    isMangerForm?: boolean,
+    mode?: TicketTableMode
 }
 
 export interface TicketTableRowState {
@@ -118,10 +125,9 @@ export class TicketTableRow extends React.Component<TicketTableRowProps, TicketT
                     <th></th>
                     <th>Дата</th>
                     <th>Назва</th>
-                    <th></th>
+                    <th>Замовити</th>
                     <th>Доступно</th>
                     <th>Замовлено</th>
-                    <th>Коментар</th>
                 </tr>
             );
 
@@ -148,12 +154,12 @@ export class TicketTableRow extends React.Component<TicketTableRowProps, TicketT
                         </TooltipHost>
                     }
                 </td>
-                <td>{(new Date(this.props.fields.DateTime)).format('dd.MM.yyyy')}</td>
+                <td>{(new Date(this.props.fields.DateTime)).format('dd-MM-yyyy HH:mm')}</td>
                 <td><a href={this.props.fields.Link}>{this.props.fields.Title}</a></td>
                 <td>
                     {
                         this.state.loading && <Spinner size={SpinnerSize.medium} /> ||
-                        Free > 0 &&
+                        Free > 0 && (new Date(this.props.fields.DateTime)) >= (new Date()) &&
                         <DefaultButton className="CommonButton OrderButton"
                             id={this.props.fields.id.toString()}
                             onClick={this._onOrderTicketsClicked}
@@ -161,15 +167,15 @@ export class TicketTableRow extends React.Component<TicketTableRowProps, TicketT
                     }
                 </td>
                 <td className='free'>
-                    {
-                        this.state.loading && <span> </span> ||
-                        Free > 0 && Free
-                    }
+                        {
+                            this.state.loading && <span> </span> || Free > 0 && <div className='freetickets'>{Free}</div>
+                        }
+                   
                 </td>
                 <td className='ordered' ref={this.tdOrderdRef}>
                     {
                         this.state.loading && <span> </span> ||
-                        Ordered + Rejected > 0 &&
+                        Ordered > 0 && Ordered + Rejected > 0 &&
                         <>
                             <div>
                                 <DefaultButton className="CommonButton OrderButton"
@@ -184,7 +190,6 @@ export class TicketTableRow extends React.Component<TicketTableRowProps, TicketT
                         </>
                     }
                 </td>
-                <td>{this.props.fields.Comments}</td>
             </tr>
         );
     }
@@ -204,10 +209,10 @@ export class TicketTableRow extends React.Component<TicketTableRowProps, TicketT
                 className="TicketTableCallout"
             >
                 <div>
-                    {this.state.bookingArr && this.state.bookingArr.length > 0 && (
+                    {this.state.bookingArr && this.state.bookingArr.filter(booking => { return booking.Status != "Відхилено"; }).length > 0 && (
                         <table className={styles.tableClassBookings + " BookingTable"}>
                             <tbody> {
-                                this.state.bookingArr.map((booking, i) => {
+                                this.state.bookingArr.filter(booking => { return booking.Status != "Відхилено"; }).map((booking, i) => {
                                     return (
                                         <tr key={booking.ID}>
                                             <td>
@@ -234,22 +239,25 @@ export class TicketTableRow extends React.Component<TicketTableRowProps, TicketT
                                             </td>
                                             <td>{booking.Seats}</td>
                                             <td>
-                                                <Dropdown
-                                                    defaultSelectedKey={booking.Status}
-                                                    options={[
-                                                        { key: 'В очікуванні', text: 'В очікуванні' },
-                                                        { key: 'Відхилено', text: 'Відхилено' },
-                                                        { key: 'Затверджено', text: 'Затверджено' }
-                                                    ]}
-                                                    onChange={(event: React.FormEvent<HTMLDivElement>, option?: IDropdownOption, index?: number) => {
-                                                        this._onStatusChange(booking, event, option, index);
-                                                    }}
-                                                    disabled={
-                                                        !sp.web.hasPermissions(this.props.bookingPerm, PermissionKind.ApproveItems) ||
-                                                        !sp.web.hasPermissions(this.props.bookingPerm, PermissionKind.EditListItems) ||
-                                                        (booking.Status == "Відхилено" && (booking.Seats > Free))
-                                                    }
-                                                />
+                                                { booking.Status
+                                                    /* || <Dropdown
+                                                        defaultSelectedKey={booking.Status}
+                                                        options={[
+                                                            { key: 'В очікуванні', text: 'В очікуванні' },
+                                                            { key: 'Відхилено', text: 'Відхилено' },
+                                                            { key: 'Затверджено', text: 'Затверджено' }
+                                                        ]}
+                                                        onChange={(event: React.FormEvent<HTMLDivElement>, option?: IDropdownOption, index?: number) => {
+                                                            this._onStatusChange(booking, event, option, index);
+                                                        }}
+                                                        disabled={
+                                                            !sp.web.hasPermissions(this.props.bookingPerm, PermissionKind.ApproveItems) ||
+                                                            !sp.web.hasPermissions(this.props.bookingPerm, PermissionKind.EditListItems) ||
+                                                            (booking.Status == "Відхилено" && (booking.Seats > Free))
+                                                        }
+                                                    />
+                                                    */
+                                                }
                                             </td>
                                             <td>{
                                                 booking.WhoBooked.ID == this.props.user["Id"] &&
@@ -325,6 +333,249 @@ export class TicketTableRow extends React.Component<TicketTableRowProps, TicketT
         });
     }
 
+
+    private monthAdd(date, month) {
+        var temp = date;
+        temp = new Date(date.getFullYear(), date.getMonth(), 1);
+        temp.setMonth(temp.getMonth() + (month + 1));
+        temp.setDate(temp.getDate() - 1);
+
+        if (date.getDate() < temp.getDate()) {
+            temp.setDate(date.getDate());
+        }
+
+        return temp;
+    }
+
+/*
+    _onStatusChangeDel(booking: TicketTableRowBooking, new_status: string, new_notes: string) {
+
+        this.setState({ error: "" });
+        this.props.MessageCallback("", "", "");
+
+        var months: number = this.props.params.monthCount;
+
+        var p3: Promise<any[]> = new Promise<any[]>((resolve) => { resolve([]); });
+
+        if (booking.Status == "Відхилено" && new_status != "Відхилено") {
+            p3 = sp.web.lists.getByTitle("Booking").items
+                .select("ID", "Title", "Play/ID", "Play/DateTime", "WhoBooked/ID", "WhoBooked/Title", "WhoBooked/Name", "WhoBooked/EMail", "Seats", "Status", "Notes", "GivenAway", "Author/ID", "Author/Title")
+                .expand("WhoBooked", "Play", "Author")
+                .filter("WhoBooked/ID eq " + this.props.user["Id"] + " and Play/DateTime ge datetime'" + this.monthAdd(new Date(), -months).toISOString() + encodeURI("' and Status ne 'Відхилено'"))
+                .get();
+        }
+
+        p3.then((items: any[]) => {
+            if (items.length > 0) {
+                this.setState({ error: "Не можна змінювати статус замовлення. За заданний період (" + months + " місяців) вже є замовлення..." });
+                this.props.MessageCallback("", "Не можна змінювати статус замовлення. За заданний період (" + months + " місяців) вже є замовлення...", "");
+            }
+            else {
+                var p1: Promise<ItemUpdateResult> = sp.web.lists.getByTitle("Plays").items.getById(this.props.fields.id)
+                    .update({ Title: this.props.fields.Title }, this.state.etag);
+
+                var p2: Promise<ItemUpdateResult> = sp.web.lists.getByTitle("Booking").items.getById(parseInt(booking.ID, 10))
+                    .update({ Status: new_status, Notes: new_notes }, booking.etag);
+
+                Promise.all([p1, p2])
+                    .then(([res1, res2]: [ItemUpdateResult, ItemUpdateResult]) => {
+                        this.setState({ etag: res1.data["odata.etag"] });
+                        this.load().then((updatedBookingArr: TicketTableRowBooking[]) => {
+                            if (this.state.isBookingsCalloutVisible) {
+                                this.setState({ isBookingsCalloutVisible: (updatedBookingArr.length > 0) });
+                            }
+
+                            updatedBookingArr.forEach(updatedBooking => {
+                                if (updatedBooking.ID == booking.ID) {
+
+                                    if (updatedBooking.Status == "Відхилено") {
+                                        // Параметри: %Замовлено, %Вистава, %Статус, %Дата, %Лінк",%Коментар
+                                        var body: string = this.props.params.TicketsOrderedEmailText
+                                            .replace("%Замовлено", updatedBooking.Seats.toString())
+                                            .replace("%Вистава", this.props.fields.Title)
+                                            .replace("%Дата", (new Date(this.props.fields.DateTime)).format('dd.MM.yyyy HH:mm'))
+                                            .replace("%Статус", updatedBooking.Status)
+                                            .replace("%Лінк", this.props.fields.Link)
+                                            .replace("%Коментар", updatedBooking.Notes);
+
+                                        sp.utility.sendEmail({
+                                            To: [updatedBooking.WhoBooked.EMail],
+                                            Subject: "Статус замовлення квитків змінився...",
+                                            Body: body
+                                        })
+                                    }
+                                    else {
+                                        // Параметри: %Замовлено, %Вистава, %Статус, %Дата, %Лінк",%Коментар
+                                        var body: string = this.props.params.StatusChangedRejectedEmailText
+                                            .replace("%Замовлено", updatedBooking.Seats.toString())
+                                            .replace("%Вистава", this.props.fields.Title)
+                                            .replace("%Дата", (new Date(this.props.fields.DateTime)).format('dd.MM.yyyy HH:mm'))
+                                            .replace("%Статус", updatedBooking.Status)
+                                            .replace("%Лінк", this.props.fields.Link)
+                                            .replace("%Коментар", updatedBooking.Notes);
+
+                                        sp.utility.sendEmail({
+                                            To: [updatedBooking.WhoBooked.EMail],
+                                            Subject: "Статус замовлення квитків змінився...",
+                                            Body: body
+                                        })
+                                    }
+                                }
+                            });
+                        });
+                        this.props.StatusChangedCallback(this.props.fields.id.toString());
+
+                    })
+                    .catch((err1: any) => {
+                        // etag invalid!
+                        this.load().then(bookings => {
+                            this.setState({ error: "Дані, можливо, змінилися. Спробуйте перезавантажити таблицю!" });
+                            this.props.MessageCallback("", "Дані, можливо, змінилися. Спробуйте перезавантажити таблицю!", "");
+                        });
+                    });
+            }
+        });
+    }
+    */
+
+    private _onOrderTicketsClicked = (event): void => {
+
+        this.setState({ error: "" });
+        this.props.MessageCallback("", "", "");
+
+        // etag ok!
+        var Ordered = 0;
+        var Rejected = 0;
+        var Free = this.props.fields.Seats;
+        this.state.bookingArr.map(booking => {
+            if (booking.Status !== "Відхилено") {
+                Free -= booking.Seats;
+                Ordered += booking.Seats;
+            }
+            else {
+                Rejected += booking.Seats;
+            }
+        });
+        var to_order = Math.min(Free, this.props.params.ticketCount);
+
+        var months: number = this.props.params.monthCount;
+
+        sp.web.lists.getByTitle("Booking").items
+            .select("ID", "Title", "Play/ID", "Play/DateTime", "WhoBooked/ID", "WhoBooked/Title", "WhoBooked/Name", "WhoBooked/EMail", "Seats", "Status", "Notes", "GivenAway", "Author/ID", "Author/Title")
+            .expand("WhoBooked", "Play", "Author")
+            .filter("WhoBooked/ID eq " + this.props.user["Id"] + " and Play/DateTime ge datetime'" + this.monthAdd(new Date(), -months).toISOString() + encodeURI("' and Status ne 'Відхилено'"))
+            .get()
+            .then((items: any[]) => {
+                if (items.length > 0) {
+                    this.setState({ error: "За заданний період (" + months + " місяців) вже є замовлення..." });
+                    this.props.MessageCallback("", "За заданний період (" + months + " місяців) вже є замовлення...", "");
+                }
+                else {
+                    // Ok/ No orders in period 
+                    sp.web.lists.getByTitle("Plays").items.getById(this.props.fields.id)
+                        .update({ Title: this.props.fields.Title }, this.state.etag)
+                        .then((res1: ItemUpdateResult) => {
+                            this.setState({ etag: res1.data["odata.etag"] });
+                            sp.web.lists.getByTitle("Booking").items
+                                .add({ PlayId: this.props.fields.id, Seats: to_order, WhoBookedId: this.props.user["Id"] })
+                                .then((res2: ItemAddResult) => {
+
+                                    this.load();
+                                    this.props.BookingChangedCallback(this.props.fields.id.toString());
+
+                                    // Параметри: % Замовлено, % Вистава, % Статус, % Дата, % Лінк", %Замовник
+                                    var user_body: string = this.props.params.TicketsOrderedEmailText
+                                        .replace("%Замовлено", to_order.toString())
+                                        .replace("%Вистава", this.props.fields.Title)
+                                        .replace("%Дата", (new Date(this.props.fields.DateTime)).format('dd.MM.yyyy HH:mm'))
+                                        .replace("%Статус", "В очікуванні")
+                                        .replace("%Лінк", this.props.fields.Link)
+                                        .replace("%Замовник", this.props.user["Title"]);
+
+                                    var user_subject: string = this.props.params.TicketsOrderedEmailSubject
+                                        .replace("%Замовлено", to_order.toString())
+                                        .replace("%Вистава", this.props.fields.Title)
+                                        .replace("%Дата", (new Date(this.props.fields.DateTime)).format('dd.MM.yyyy HH:mm'))
+                                        .replace("%Статус", "В очікуванні")
+                                        .replace("%Лінк", this.props.fields.Link)
+                                        .replace("%Замовник", this.props.user["Title"]);
+
+                                    if (!this.props.params.disableNotifications) {
+                                        sp.utility.sendEmail({
+                                            To: [this.props.user["Email"]],
+                                            Subject: user_subject,
+                                            Body: user_body
+                                        })
+                                    }
+
+                                    var manager_body: string = this.props.params.TicketsOrderedManagerEmailText
+                                        .replace("%Замовлено", to_order.toString())
+                                        .replace("%Вистава", this.props.fields.Title)
+                                        .replace("%Дата", (new Date(this.props.fields.DateTime)).format('dd.MM.yyyy HH:mm'))
+                                        .replace("%Статус", "В очікуванні")
+                                        .replace("%Лінк", this.props.fields.Link)
+                                        .replace("%Замовник", this.props.user["Title"]);
+
+                                    var manager_subject: string = this.props.params.TicketsOrderedManagerEmailSubject
+                                        .replace("%Замовлено", to_order.toString())
+                                        .replace("%Вистава", this.props.fields.Title)
+                                        .replace("%Дата", (new Date(this.props.fields.DateTime)).format('dd.MM.yyyy HH:mm'))
+                                        .replace("%Статус", "В очікуванні")
+                                        .replace("%Лінк", this.props.fields.Link)
+                                        .replace("%Замовник", this.props.user["Title"]);
+
+                                    var emails: string[] = this.props.params.managers.map(manager => { return manager["EMail"];});
+
+                                    if (!this.props.params.disableNotifications) {
+                                        sp.utility.sendEmail({
+                                            To: emails,
+                                            Subject: manager_subject,
+                                            Body: manager_body
+                                        })
+                                    }
+
+                                    this.props.MessageCallback("", "", "Замовлено " + to_order + " квитки на виставу '" + this.props.fields.Title + "'. Дата вистави - " + (new Date(this.props.fields.DateTime)).format('dd.MM.yyyy') + ".");
+                                });
+                        })
+                        .catch((err1: any) => {
+                            // etag invalid!
+                            this.load().then(bookings => {
+                                this.setState({ error: "Не вдалося забронювати квитки. Дані, можливо, змінилися. Спробуйте перезавантажити таблицю!<br/> Або немає прав на внесення змін." });
+                                this.props.MessageCallback("", "Не вдалося забронювати квитки. Дані, можливо, змінилися. Спробуйте перезавантажити таблицю!<br/> Або немає прав на внесення змін.", "");
+                            });
+                        });
+                }
+            });
+    }
+
+    _onDeleteBookingClicked(bookingId: string) {
+        this.setState({ error: "" });
+        this.props.MessageCallback("", "", "");
+
+        var foundBookings = this.state.bookingArr.filter(booking => { return booking.ID == bookingId });
+        if (foundBookings.length > 0) {
+            sp.web.lists.getByTitle("Booking").items.getById(parseInt(bookingId, 10))
+                .delete(foundBookings[0].etag)
+                .then(res => {
+                    this.load().then((bookings: any[]) => {
+                        if (this.state.isBookingsCalloutVisible) {
+                            this.setState({ isBookingsCalloutVisible: (bookings.length > 0) });
+                        }
+                    });
+                    this.props.BookingChangedCallback(this.props.fields.id.toString());
+                })
+                .catch((err1: any) => {
+                    this.setState({ error: "Дані, можливо, змінилися. Спробуйте перезавантажити таблицю!" });
+                    this.props.MessageCallback("", "Дані, можливо, змінилися. Спробуйте перезавантажити таблицю!", "");
+                });
+        }
+    }
+
+    BookingChangedCallback() {
+        this.load();
+    }
+
+    /*
     private sendEmail(from, to, body, subject): Promise<any> {
         //Get the relative url of the site
         return new Promise<any>((resolve, reject) => {
@@ -357,136 +608,7 @@ export class TicketTableRow extends React.Component<TicketTableRowProps, TicketT
         });
 
     }
+    */
 
-    private monthAdd(date, month) {
-        var temp = date;
-        temp = new Date(date.getFullYear(), date.getMonth(), 1);
-        temp.setMonth(temp.getMonth() + (month + 1));
-        temp.setDate(temp.getDate() - 1);
-
-        if (date.getDate() < temp.getDate()) {
-            temp.setDate(date.getDate());
-        }
-
-        return temp;
-    }
-
-    private _onOrderTicketsClicked = (event): void => {
-
-        // etag ok!
-        var Ordered = 0;
-        var Rejected = 0;
-        var Free = this.props.fields.Seats;
-        this.state.bookingArr.map(booking => {
-            if (booking.Status !== "Відхилено") {
-                Free -= booking.Seats;
-                Ordered += booking.Seats;
-            }
-            else {
-                Rejected += booking.Seats;
-            }
-        });
-        var to_order = Math.min(Free, this.props.params.ticketCount);
-
-        var months: number = this.props.params.monthCount;
-
-        sp.web.lists.getByTitle("Booking").items
-            .select("ID", "Title", "Play/ID", "Play/DateTime", "WhoBooked/ID", "WhoBooked/Title", "WhoBooked/Name", "WhoBooked/EMail", "Seats", "Status", "Notes", "GivenAway", "Author/ID", "Author/Title")
-            .expand("WhoBooked", "Play", "Author")
-            .filter("WhoBooked/ID eq " + this.props.user["Id"] + " and Play/DateTime ge datetime'" + this.monthAdd(new Date(), -months).toISOString() + encodeURI("' and Status ne 'Відхилено'"))
-            .get()
-            .then((items: any[]) => {
-                if (items.length > 0) {
-                    this.setState({ error: "За заданний період (" + months + " місяців) вже є замовлення..." });
-                }
-                else {
-                    // Ok/ No orders in period 
-                    sp.web.lists.getByTitle("Plays").items.getById(this.props.fields.id)
-                        .update({ Title: this.props.fields.Title }, this.state.etag)
-                        .then((res1: ItemUpdateResult) => {
-                            this.setState({ etag: res1.data["odata.etag"] });
-                            sp.web.lists.getByTitle("Booking").items
-                                .add({ PlayId: this.props.fields.id, Seats: to_order, WhoBookedId: this.props.user["Id"] })
-                                .then((res2: ItemAddResult) => {
-
-                                    this.load();
-
-                                    sp.utility.sendEmail({
-                                        To: [this.props.user["Email"]],
-                                        Subject: "Замовлено " + to_order + " квитки в театр...",
-                                        Body: "Замовлено " + to_order + " квитки на виставу '" + this.props.fields.Title + "'. Дата вистави - " + (new Date(this.props.fields.DateTime)).format('dd.MM.yyyy') + ". " + this.props.fields.Link
-                                    })
-                                });
-                        })
-                        .catch((err1: any) => {
-                            // etag invalid!
-                            this.load().then(bookings => {
-                                this.setState({ error: "Дані, можливо, змінилися. Спробуйте перезавантажити таблицю!<br/> Або немає прав на внесення змін." });
-                            });
-                        });
-                }
-            });
-    }
-
-    private _onStatusChange(booking: TicketTableRowBooking, event: React.FormEvent<HTMLDivElement>, option?: IDropdownOption, index?: number) {
-
-        var months: number = this.props.params.monthCount;
-
-        var p3: Promise<any[]> = new Promise<any[]>((resolve) => { resolve([]); });
-
-        if (booking.Status == "Відхилено" && option.text != "Відхилено") {
-            p3 = sp.web.lists.getByTitle("Booking").items
-                .select("ID", "Title", "Play/ID", "Play/DateTime", "WhoBooked/ID", "WhoBooked/Title", "WhoBooked/Name", "WhoBooked/EMail", "Seats", "Status", "Notes", "GivenAway", "Author/ID", "Author/Title")
-                .expand("WhoBooked", "Play", "Author")
-                .filter("WhoBooked/ID eq " + this.props.user["Id"] + " and Play/DateTime ge datetime'" + this.monthAdd(new Date(), -months).toISOString() + encodeURI("' and Status ne 'Відхилено'"))
-                .get();
-        }
-
-        p3.then((items: any[]) => {
-            if (items.length > 0) {
-                this.setState({ error: "Не можна змінювати статус замовлення. За заданний період (" + months + " місяців) вже є замовлення..." });
-            }
-            else {
-                var p1: Promise<ItemUpdateResult> = sp.web.lists.getByTitle("Plays").items.getById(this.props.fields.id)
-                    .update({ Title: this.props.fields.Title }, this.state.etag);
-
-                var p2: Promise<ItemUpdateResult> = sp.web.lists.getByTitle("Booking").items.getById(parseInt(booking.ID, 10))
-                    .update({ Status: option.text }, booking.etag);
-
-                Promise.all([p1, p2])
-                    .then(([res1, res2]: [ItemUpdateResult, ItemUpdateResult]) => {
-                        this.setState({ etag: res1.data["odata.etag"] });
-                        this.load().then((updatedBookingArr: TicketTableRowBooking[]) => {
-                            this.setState({ isBookingsCalloutVisible: (updatedBookingArr.length > 0) });
-                            updatedBookingArr.forEach(updatedBooking => {
-                                if (updatedBooking.ID == booking.ID) {
-                                    sp.utility.sendEmail({
-                                        To: [updatedBooking.WhoBooked.EMail],
-                                        Subject: "Статус замовлення квитків змінився...",
-                                        Body: "Замовлено " + updatedBooking.Seats + " квитки на виставу '" + this.props.fields.Title + "'. Новий статус замовлення '" + updatedBooking.Status + "'. Дата вистави - " + (new Date(this.props.fields.DateTime)).format('dd.MM.yyyy') + ". " + this.props.fields.Link
-                                    })
-                                }
-                            });
-                        });
-                    })
-                    .catch((err1: any) => {
-                        // etag invalid!
-                        this.load().then(bookings => {
-                            this.setState({ error: "Дані, можливо, змінилися. Спробуйте перезавантажити таблицю!" });
-                        });
-                    });
-            }
-        });
-    }
-
-    private _onDeleteBookingClicked(bookingId: string) {
-        sp.web.lists.getByTitle("Booking").items.getById(parseInt(bookingId, 10))
-            .delete()
-            .then(res => {
-                this.load().then((bookings: any[]) => {
-                    this.setState({ isBookingsCalloutVisible: (bookings.length > 0) });
-                });
-            });
-    }
 
 }

@@ -5,6 +5,17 @@
         margin-left: 0px;
     }
 
+    div.freetickets {
+        width: 18px;
+        padding: 4px;
+        margin: auto;
+        background: #F4D93F;
+        border-radius: 8px;
+        text-align: center;
+        font-weight: bold;
+        color: #006699;
+    }
+
     .TicketTable {
         border: 2px solid white;
 
@@ -23,12 +34,14 @@
         }
 
         & td.free {
-            align-content: center;
+            padding: 1px;
+            font-weight: bold;
+            color: #006699;
         }
 
         & td.ordered {
             padding: 2px;
-            align-content: center;
+            text-align: center;
         }
     }
 
@@ -41,7 +54,6 @@
     }
 
     .MessageBar {
-        max-width: 600px;
         margin-bottom: 20px;
         border-radius: 4px
     }
@@ -89,6 +101,13 @@
             background: red;
             color: white;
         }
+    }
+
+    .Hidden {
+        visibility: hidden; 
+        overflow: hidden; 
+        height: 0; 
+        width: 0;
     }
 }
 
