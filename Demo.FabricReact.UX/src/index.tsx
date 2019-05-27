@@ -16,6 +16,8 @@ import "core-js/es6/promise";
 import * as React from "react";
 import * as ReactDOM from "react-dom";
 
+import 'jquery';
+
 // This is how you import the components you need from the Office Fabric React Framework
 import { Button, List } from 'office-ui-fabric-react';
 import { Stack } from 'office-ui-fabric-react/lib/Stack';
@@ -397,6 +399,10 @@ export class TicketList extends React.Component<TicketListProps, TicketListState
     }
 }
 */
+
+$("span#DeltaPlaceHolderPageTitleInTitleArea").text("Квитки в театр");
+
+
 
 // Get the "main" element
 let target = document.querySelector("#tickets_conainer");

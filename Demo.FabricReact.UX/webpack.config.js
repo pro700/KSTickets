@@ -2,6 +2,15 @@ var path = require('path');
 const SPSaveWebpackPlugin = require('spsave-webpack-plugin');
 
 module.exports = {
+
+    //externals: [{
+    //    "jQuery": "jQuery",
+    //    "sp-init": "sp-init",
+    //    "microsoft-ajax": "microsoft-ajax",
+    //    "sp-runtime": "sp-runtime",
+    //    "sharepoint": "sharepoint"
+    //}],
+
     // Target the output of the typescript compiler
     context: path.join(__dirname, "src"),
 
@@ -19,7 +28,7 @@ module.exports = {
         coreOptions: {
             checkin: true,
             checkinType: 1,
-            siteUrl: "http://sp.kyivstar.ua"
+            siteUrl: "http://tickets"
         },
         credentialOptions: {
             /* See https://github.com/s-KaiNet/node-sp-auth#params for authentication options */

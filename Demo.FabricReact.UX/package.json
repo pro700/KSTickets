@@ -24,8 +24,10 @@
     "typescript": "^3.3.3333"
   },
   "devDependencies": {
+    "@types/microsoft-ajax": "0.0.33",
     "@types/react": "^16.3.12",
     "@types/react-dom": "^16.0.5",
+    "@types/sharepoint": "^2016.1.2",
     "babel-core": "^6.26.0",
     "babel-loader": "^7.1.4",
     "babel-preset-es2015": "^6.24.1",

@@ -65,7 +65,8 @@ export interface TicketTableRowProps {
     StatusChangedCallback?: (playId: string) => {},
     MessageCallback?: (msg: string, err: string, scs: string) => {},
     isMangerForm?: boolean,
-    mode?: TicketTableMode
+    mode?: TicketTableMode,
+    bookingArr: TicketTableRowBooking[]
 }
 
 export interface TicketTableRowState {
@@ -115,7 +116,7 @@ export class TicketTableRow extends React.Component<TicketTableRowProps, TicketT
         super(props);
         var etag = props.fields ? props.fields.etag : "";
         // Init state
-        this.state = { bookingArr: [], loading: true, etag: etag, isBookingsCalloutVisible: false };
+        this.state = { bookingArr: props.bookingArr, loading: false, etag: etag, isBookingsCalloutVisible: false };
     }
 
     render(): JSX.Element {
@@ -282,7 +283,6 @@ export class TicketTableRow extends React.Component<TicketTableRowProps, TicketT
     }
 
     componentDidMount() {
-        this.load();
     }
 
     componentDidUpdate(prevProps, prevState) {
@@ -571,9 +571,9 @@ export class TicketTableRow extends React.Component<TicketTableRowProps, TicketT
         }
     }
 
-    BookingChangedCallback() {
-        this.load();
-    }
+    //BookingChangedCallback() {
+    //    this.load();
+    //}
 
     /*
     private sendEmail(from, to, body, subject): Promise<any> {

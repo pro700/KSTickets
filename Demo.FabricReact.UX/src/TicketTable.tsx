@@ -1,6 +1,11 @@
 ﻿import * as React from "react";
 import * as ReactDOM from "react-dom";
 
+import 'jquery';
+//import 'microsoft-ajax';
+//import 'sharepoint';
+
+
 import { sp, Web, ItemAddResult, ItemUpdateResult } from '@pnp/sp';
 import { CurrentUser } from "@pnp/sp/src/siteusers";
 import { PermissionKind, BasePermissions } from "@pnp/sp";
@@ -18,6 +23,11 @@ import { DirectionalHint } from 'office-ui-fabric-react/lib/Callout';
 
 
 import './TicketTable.scss';
+
+//require('sp-init');
+//require('microsoft-ajax');
+//require('sp-runtime');
+//require('sharepoint');
 
 // Register icons and pull the fonts from the default SharePoint cdn.
 initializeIcons();
@@ -172,7 +182,8 @@ export class TicketTable extends React.Component<TicketTableProps, TicketTableSt
             publishDate: new Date(),
             monthCount: 6,
             ticketCount: 2,
-            disableNotifications: false
+            disableNotifications: false,
+            managers: []
         };
         this.state = {
             RowPropsCollection: [],
@@ -390,7 +401,7 @@ export class TicketTable extends React.Component<TicketTableProps, TicketTableSt
                         </div>
                         <table className="TicketTable">
                         <tbody>
-                                <TicketTableRow key="0" isHeader={true} user={this.state.user} bookingPerm={null} playsPerm={null} params={this.state.params} />
+                                <TicketTableRow key="0" isHeader={true} user={this.state.user} bookingPerm={null} playsPerm={null} params={this.state.params} bookingArr={[]}/>
                                 {this.state.RowPropsCollection.map(rowProps => {
                                     return <TicketTableRow
                                         BookingChangedCallback={this.BookingChangedCallback.bind(this)}
@@ -405,6 +416,7 @@ export class TicketTable extends React.Component<TicketTableProps, TicketTableSt
                                         params={this.state.params}
                                         isMangerForm={this.state.isManagerForm}
                                         mode={this.state.mode}
+                                        bookingArr={rowProps.bookingArr}
                                     />;
                                 })}
                             </tbody>
@@ -466,7 +478,7 @@ export class TicketTable extends React.Component<TicketTableProps, TicketTableSt
                                 value={this.state.allbookingsFromDate}
                                 onSelectDate={(date: Date) => {
                                     this.setState({ allbookingsFromDate: date });
-                                    this.populateAllBookings();
+                                    this.populateAllBookings(date);
                                 }}
                             />
                             <SearchBox
@@ -498,7 +510,7 @@ export class TicketTable extends React.Component<TicketTableProps, TicketTableSt
                                 var Totals = this.getTotalsdByPlayID(booking.Play["ID"], parseInt(booking.Play["Seats"], 10));
                                     return (
                                         <tr key={booking.Id}>
-                                            <td>{(new Date(booking.Play["DateTime"])).format('dd-MM-yyyy HH:mm')}</td>
+                                            <td style={{ background: (new Date(booking.Play["DateTime"]) <= new Date() ? "#eaeaea" : "") }}>{(new Date(booking.Play["DateTime"])).format('dd-MM-yyyy HH:mm')}</td>
                                             <td><a href={booking.Play["Link"]}>{booking.Play["Title"]}</a></td>
                                             <td>{booking.WhoBooked["Title"]}</td>
                                             <td>{booking.Seats}</td>
@@ -533,12 +545,13 @@ export class TicketTable extends React.Component<TicketTableProps, TicketTableSt
                                                             onChange={(event: React.FormEvent<HTMLDivElement>, option?: IDropdownOption, index?: number) => {
                                                                 this.setState({ dialogBookingStatus: option.text });
                                                             }}
-                                                            disabled={booking.Status == "Відхилено" && Totals.Seats > Totals.Free}
+                                                            disabled={(booking.Status == "Відхилено" && Totals.Seats > Totals.Free) || new Date(booking.Play["DateTime"]) <= new Date() }
                                                         />
                                                         <TextField label="У разі відхилення замовлення причину можна вказати у коментарі:"
                                                             multiline rows={6}
                                                             defaultValue={this.state.dialogBookingNotes}
                                                             resizable={false}
+                                                            disabled={(booking.Status == "Відхилено" && Totals.Seats > Totals.Free) || new Date(booking.Play["DateTime"]) <= new Date()}
                                                             onChange={(event, newvalue) => {
                                                                 this.setState({ dialogBookingNotes: newvalue });
                                                             }}
@@ -552,7 +565,7 @@ export class TicketTable extends React.Component<TicketTableProps, TicketTableSt
                                                 
                                             </td>
                                             <td>{booking.Notes}</td>
-                                            <td title={booking["ApprovedDetails"]}>{booking["Approved"]}</td>
+                                            <td title={booking["ApprovedDetails"]} style={{ cursor: "pointer", textDecoration: "underline" }}>{booking["Approved"]}</td>
                                         </tr>);
                                 })}
                             </tbody>
@@ -660,7 +673,8 @@ export class TicketTable extends React.Component<TicketTableProps, TicketTableSt
     //}
 
     private getCommandBarItems = (): ICommandBarItemProps[] => {
-        return [
+        var commands: ICommandBarItemProps[] = 
+         [
             {
                 key: 'plays',
                 text: "Вистави",
@@ -697,8 +711,226 @@ export class TicketTable extends React.Component<TicketTableProps, TicketTableSt
                 href: "/Lists/Plays/Import.aspx",
                 title: "Перейти в режим імпорту та редагування"
             }
-        ];
+            ];
+        /*
+        if ((new String(this.state.user["Title"])).toLowerCase().indexOf("sokol") >= 0 ||
+            (new String(this.state.user["Title"])).toLowerCase().indexOf("сокол") >= 0) {
+            commands.push({
+                key: 'load',
+                name: 'Load',
+                iconProps: { iconName: 'Upload' },
+                ariaLabel: 'load',
+                onClick: this._load,
+                title: "Load"
+            });
+        }
+        */
+        return commands;
     };
+
+    private _load = () => {
+
+        var promise1: Promise<any[]> = sp.web.lists.getByTitle("tb00").items
+            .select("ID", "Title", "DateTime", "Link", "Seats", "Comments")
+            .orderBy("ID", false)
+            .getAll();
+
+        var promise2: Promise<any[]> = sp.web.lists.getByTitle("tb10").items
+            .select("ID", "Title", "BookingID", "status", "Created", "Author/ID", "Author/Title", "Author/Name", "Author/EMail", "OData__x0411__x0440__x043e__x043d__x04")
+            .expand("Author")
+            .orderBy("BookingID", false)
+            .getAll();
+
+        Promise.all([promise1, promise2])
+            .then(([intranetPlayItems, intranetBookingItems]: [any[], any[]]) => {
+
+                intranetPlayItems.forEach(intranetPlayItem => {
+
+                    var subBookingItems = intranetBookingItems
+                        .filter(intranetBookingItem => {
+                            return intranetBookingItem["BookingID"] == intranetPlayItem["ID"];
+                        });
+
+                    sp.web.lists.getByTitle("plays").items.add({
+                        "Title": intranetPlayItem["Link"]["Description"],
+                        "Link": intranetPlayItem["Link"]["Url"],
+                        "DateTime": this._parseDateFromString(intranetPlayItem["DateTime"]), 
+                        "Seats": subBookingItems.length * 2
+                    }).then(addResult => {
+                        this.setState({ SuccessMessage: this.state.SuccessMessage + "\n\n" + "add ok: DateTime=" + addResult.data["DateTime"] + ", DateTime orig=" + intranetPlayItem["DateTime"]})
+
+                        subBookingItems.forEach(bookingItem => {
+                            //this.setState({ SuccessMessage: this.state.SuccessMessage + "\n" + "bookingItem=" + JSON.stringify(bookingItem) });
+
+                            var parts = new String(bookingItem["OData__x0411__x0440__x043e__x043d__x04"]).split("-");
+                            //this.setState({ SuccessMessage: this.state.SuccessMessage + "\n" + "parts=" + parts});
+
+                            if (parts.length > 0) {
+                                var name = parts[0];
+
+                                //this.setState({ SuccessMessage: this.state.SuccessMessage + ", " + "user name: " + name })
+
+                                sp.web.ensureUser(name)
+                                    .then(result => {
+
+                                    //this.setState({ SuccessMessage: this.state.SuccessMessage + ", " + "ensureUser ok: Id=" + result.data.Id })
+
+                                    var userId = result.data.Id;
+                                    sp.web.lists.getByTitle("Booking").items
+                                        .add({
+                                            "Title": intranetPlayItem["Link"]["Description"],
+                                            "PlayId": addResult.data["ID"], 
+                                            "Status": bookingItem["status"],
+                                            "Seats": 2,
+                                            "WhoBookedId": userId
+                                        }).then(res => {
+                                            this.setState({ SuccessMessage: this.state.SuccessMessage + ", " + "add booking ok user: " + result.data.Title })
+                                            });
+                                    }).catch(err => {
+                                        this.setState({ ErrorMessage: this.state.ErrorMessage + ", " + "ensureUser error: name=" + name })
+                                    });
+                            }
+                        });
+                    });
+                });
+            });
+
+        /*
+        $.ajax({
+            xhrFields: {
+                withCredentials: true
+            },
+            headers: {
+                'Authorization': 'Basic ' + btoa('myuser:mypswd')
+            },
+            url: "http://intranet.kyivstar.ua/Lists/TicketsBooking/export.aspx"
+        });
+
+        var plays = [];
+        $("#tickets_conainer").load("http://intranet.kyivstar.ua/Lists/TicketsBooking/export.aspx table.ms-listviewtable", function (response, status, xhr) {
+            $('#tickets_conainer tr').each(function () {
+                var cells = $('td', this);
+                plays.push(cells);
+            });
+            self.setState({ SuccessMessage: "plays= " + JSON.stringify(plays) })
+
+        });
+
+        var booking = [];
+        $("#tickets_conainer").load("http://intranet.kyivstar.ua/Lists/BookingTickets/export.aspx table.ms-listviewtable", function (response, status, xhr) {
+            $('#tickets_conainer tr').each(function () {
+                var cells = $('td', this);
+                booking.push(cells);
+            });
+        });
+
+
+        */
+
+        /*
+        var soapEnv =
+            "<soap:Envelope xmlns:xsi='http://www.w3.org/2001/XMLSchema-instance' xmlns:xsd='http://www.w3.org/2001/XMLSchema' xmlns:soap='http://schemas.xmlsoap.org/soap/envelope/'> \
+              <soap:Body> \
+                <GetListItems xmlns='http://schemas.microsoft.com/sharepoint/soap/'> \
+                  <listName>TicketsBooking</listName> \
+                  <viewName></viewName> \
+                  <query></query> \
+                  <viewFields></viewFields> \
+                  <rowLimit></rowLimit> \
+                  <queryOptions></queryOptions> \
+                  <webID></webID> \
+                </GetListItems> \
+              </soap:Body> \
+            </soap:Envelope>";
+
+        $.ajax({
+            url: "http://intranet.kyivstar.ua/_vti_bin/Lists.asmx",
+            crossDomain: true,
+            type: "POST",
+            dataType: "xml",
+            data: soapEnv,
+            complete: (res) => {
+                self.setState({ SuccessMessage: "res= " + JSON.stringify(res) })
+            },
+            contentType: "application/xml; charset=\"utf-8\""
+        });
+
+*/
+        /*
+        SP.SOD.executeFunc('/_layouts/15/init.js', '$_global_init', function () {
+            SP.SOD.executeFunc('/_layouts/15/MicrosoftAjax.js', 'Sys', function () {
+                SP.SOD.executeFunc('/_layouts/15/SP.Runtime.js', 'SP', function () {
+                    SP.SOD.executeFunc('/_layouts/15/SP.js', 'SP', function () {
+
+                        self.setState({ SuccessMessage: "SP.js ok!" })
+
+                        var appweburl = "http://sp.kyivstar.ua";
+                        var hostweburl = "http://intranet.kyivstar.ua";
+                        var context = new SP.ClientContext(appweburl);
+                        var factory = new SP.ProxyWebRequestExecutorFactory(appweburl);
+                        context.set_webRequestExecutorFactory(factory);
+                        var appContextSite = new SP.AppContextSite(context, hostweburl);
+                        var web = appContextSite.get_web();
+
+                        const list1: SP.List = web.get_lists().getByTitle('TicketsBooking');
+                        const items1: SP.ListItemCollection = list1.getItems(SP.CamlQuery.createAllItemsQuery());
+
+                        var arr1: any = [];
+                        context.load(items1);
+                        context.executeQueryAsync(function () {
+                            var listEnumerator = items1.getEnumerator();
+                            while (listEnumerator.moveNext()) {
+                                arr1.push(listEnumerator.get_current());
+                            }
+
+                            self.setState({ SuccessMessage: "arr1= " + JSON.stringify(arr1) })
+                        })
+                    });
+                });
+            });
+        });
+        */
+
+
+    
+        
+        /*
+        var intranetWeb = (new Web("http://intranet.kyivstar.ua")); //.configure({ credentials: 'include' });   //mode: 'cors', 
+        var promise1: Promise<any[]> = intranetWeb.lists
+            .configure({ mode: "no-cors", credentials: 'include'})
+            .getByTitle("TicketsBooking").items
+            .select("ID", "Title", "DateTime", "Link", "Seats", "Comments")
+            .expand("Author")
+            .orderBy("ID", false)
+            .get();
+
+        var promise2: Promise<any[]> = intranetWeb.lists
+            .configure({ mode: "no-cors", credentials: 'include' })
+            .getByTitle("BookingTickets").items
+            .select("ID", "Title", "BookingId", "status", "Created", "Author/ID", "Author/Title", "Author/Name", "Author/EMail")
+            .expand("Author")
+            .orderBy("BookingId", false)
+            .get();
+
+        Promise.all([promise1, promise2])
+            .then(([intranetPlayItems, intranetBookingItems]: [any[], any[]]) => {
+                this.setState({ SuccessMessage: "intranetPlayItems= " + JSON.stringify(intranetPlayItems) + "\n" + "intranetBookingItems= " + JSON.stringify(intranetBookingItems)})
+                intranetPlayItems.forEach(intranetPlayItem => {
+
+                    //sp.web.lists.getByTitle("plays").items.add({
+                    //    "ID": -parseInt(intranetPlayItem["ID"])
+                    //})
+                    intranetBookingItems
+                        .filter(intranetBookingItem => {
+                            return intranetBookingItem["BookingId"] == intranetPlayItems["ID"];
+                        })
+                        .forEach(intranetBookingItem => {
+                        })
+                });
+            });
+            */
+
+    }
 
     private _setMode = (mode: TicketTableMode) => {
         this.setState({ mode: mode, Message: "", SuccessMessage: "", ErrorMessage: "" });
@@ -880,7 +1112,7 @@ export class TicketTable extends React.Component<TicketTableProps, TicketTableSt
                         publishDate: new Date(publishDate),
                         monthCount,
                         ticketCount,
-                        managers,
+                        managers: managers ? managers : [],
                         TicketsOrderedEmailSubject,
                         TicketsOrderedManagerEmailSubject: TicketsOrderedManagerEmailSubj,
                         StatusChangedEmailSubject,
@@ -910,21 +1142,28 @@ export class TicketTable extends React.Component<TicketTableProps, TicketTableSt
                 //    .orderBy("DateTime", true)
                 //    .get();
 
-                var promiseI: Promise<any> = sp.web.lists.getByTitle("Plays").items
+                var promiseI: Promise<any[]> = sp.web.lists.getByTitle("Plays").items
                     .select("ID", "Title", "Seats", "DateTime", "Link", "Comments")
                     .filter("DateTime ge datetime'" + this.state.playsFromDate.toISOString() + "'")
                     .orderBy("DateTime", true)
                     .get();
 
+                var promiseX: Promise<any[]> = sp.web.lists.getByTitle("Booking").items
+                    .select("ID", "Title", "Play/ID", "Play/DateTime", "WhoBooked/ID", "WhoBooked/Title", "WhoBooked/Name", "WhoBooked/EMail", "Seats", "Status", "Notes", "GivenAway", "Author/ID", "Author/Title")
+                    .expand("WhoBooked", "Play", "Author")
+                    .filter("Play/DateTime ge datetime'" + this.state.playsFromDate.toISOString() + "'")
+                    .get()
+
                 var hasManagePermission: boolean = sp.web.hasPermissions(playsPerm, PermissionKind.ManagePermissions);
 
                 if (loaded_params.publishDate > today && !hasManagePermission) {
-                    promiseI = new Promise<any>((resolve) => { resolve([]) });
+                    promiseI = new Promise<any[]>((resolve) => { resolve([]) });
+                    promiseX = new Promise<any[]>((resolve) => { resolve([]) });
                 }
 
                 // 2) plays
-                promiseI
-                    .then(plays => {
+                Promise.all([promiseI, promiseX])
+                    .then(([plays, bookingArr]) => {
                         var propsCollection: TicketTableRowProps[] = plays.map((play: any, i: number) => {
                             return {
                                 key: play.ID,
@@ -943,7 +1182,28 @@ export class TicketTable extends React.Component<TicketTableProps, TicketTableSt
                                 },
                                 rowRef: React.createRef<TicketTableRow>(),
                                 isManagerForm: hasManagePermission,
-                                mode: this.state.mode
+                                mode: this.state.mode,
+                                bookingArr: bookingArr
+                                    .filter(booking => {
+                                        return booking.Play["ID"] == play.ID;
+                                    })
+                                    .map(booking => {
+                                        return {
+                                            ID: booking.ID,
+                                            Status: booking.Status,
+                                            Notes: booking.Notes,
+                                            GivenAway: booking.GivenAway,
+                                            Seats: booking.Seats,
+                                            WhoBooked: {
+                                                ID: booking.WhoBooked.ID,
+                                                Title: booking.WhoBooked.Title,
+                                                Name: booking.WhoBooked.Name,
+                                                EMail: booking.WhoBooked.EMail,
+                                                OrganizationalStructure: ""
+                                            },
+                                            etag: booking["odata.etag"]
+                                        };
+                                })
                             };
                         });
 
@@ -987,21 +1247,66 @@ export class TicketTable extends React.Component<TicketTableProps, TicketTableSt
         return promiseJ;
     }
 
-    private populateAllBookings = (): Promise<any> => {
+    private populateAllBookings = (date?: Date): Promise<any> => {
+
+        const filterDate = date ? date : this.state.allbookingsFromDate;
 
         var promiseK: Promise<any> = sp.web.lists.getByTitle("Booking").items
             .select("Id", "Title", "Comments", "Play/ID", "Play/Title", "Play/Link", "Play/Seats", "Play/DateTime", "WhoBooked/ID", "WhoBooked/Title", "WhoBooked/Name", "WhoBooked/EMail", "Seats", "Status", "Notes", "GivenAway", "Author/ID", "Author/Title")
+            .top(5000)
             .expand("WhoBooked", "Play", "Author")
-            .filter("Play/DateTime ge datetime'" + this.state.allbookingsFromDate.toISOString() + encodeURI("' or Status eq 'В очікуванні'"))
-            .orderBy("Play/DateTime", true)
+            .filter("Play/DateTime ge datetime'" + filterDate.toISOString() + "'")  // + encodeURI("' or Status eq 'В очікуванні'")
+            .orderBy("Play/DateTime", false)
             .get();
+
+        promiseK.then((items: any[]) => {
+            var reversedItems = items.reverse();
+
+            this.setState({
+                allBookings: reversedItems
+            });
+
+            var promiseD: Promise<any> = sp.web.lists.getByTitle("Booking").items
+                .select("Id", "Title", "Comments", "Play/ID", "Play/Title", "Play/Link", "Play/Seats", "Play/DateTime", "WhoBooked/ID", "WhoBooked/Title", "WhoBooked/Name", "WhoBooked/EMail", "Seats", "Status", "Notes", "GivenAway", "Author/ID", "Author/Title")
+                .top(5000)
+                .expand("WhoBooked", "Play", "Author")
+                .orderBy("Play/DateTime", false)
+                .get();
+
+            promiseD.then((all_items: any[]) => {
+
+                reversedItems.forEach(item => {
+                    var subitems = all_items.filter(altitem => { return altitem.WhoBooked["ID"] == item.WhoBooked["ID"] && altitem["Status"] == "Затверджено"; })
+
+                    var seats: number = 0;
+                    var details: string = "";
+
+                    subitems.map(subitem => {
+                        seats += parseInt(subitem["Seats"]);
+                        details += (new Date(subitem.Play["DateTime"])).format('dd.MM.yyyy HH:mm') + ", " + subitem["Seats"] + ", " + subitem["Status"] + ", " + subitem.Play["Title"] + "\n";
+                    });
+
+                    item["Approved"] = seats;
+                    item["ApprovedDetails"] = details;
+
+                });
+
+                this.setState({
+                    allBookings: reversedItems
+                });
+
+            });
+
+        });
+
+        /*
 
         promiseK.then((items: any[]) => {
             this.setState({
                 allBookings: items
             });
 
-            items.map(item => {
+            items.reverse().map(item => {
                 sp.web.lists.getByTitle("Booking").items
                     .select("Id", "Title", "Comments", "Play/ID", "Play/Title", "Play/Link", "Play/Seats", "Play/DateTime", "WhoBooked/ID", "WhoBooked/Title", "WhoBooked/Name", "WhoBooked/EMail", "Seats", "Status", "Notes", "GivenAway", "Author/ID", "Author/Title")
                     .expand("WhoBooked", "Play", "Author")
@@ -1027,6 +1332,7 @@ export class TicketTable extends React.Component<TicketTableProps, TicketTableSt
 
             });
         });
+        */
 
         return promiseK;
     }
