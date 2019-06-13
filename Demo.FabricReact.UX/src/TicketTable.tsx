@@ -114,13 +114,11 @@ export interface TicketTableParams {
 export interface TicketTableMyBookings {
     "Id",
     "Title",
-    "Comments",
     "Play",
     "WhoBooked",
     "Seats",
     "Status",
     "Notes",
-    "GivenAway"
     "Author"
 }
 
@@ -406,6 +404,7 @@ export class TicketTable extends React.Component<TicketTableProps, TicketTableSt
                                     return <TicketTableRow
                                         BookingChangedCallback={this.BookingChangedCallback.bind(this)}
                                         StatusChangedCallback={this.StatusChangedCallback.bind(this)}
+                                        OrderAttemptFailed={this.OrderAttemptFailed.bind(this) }
                                         MessageCallback={this.MessageCallback.bind(this)}
                                         ref={rowProps.rowRef}
                                         key={rowProps.key}
@@ -507,7 +506,7 @@ export class TicketTable extends React.Component<TicketTableProps, TicketTableSt
                                         (new String(value.Play["Title"])).toUpperCase().indexOf(this.state.filter.toUpperCase()) >= 0 : true;
                                 })
                                 .map((booking, index) => {
-                                var Totals = this.getTotalsdByPlayID(booking.Play["ID"], parseInt(booking.Play["Seats"], 10));
+                                    var Totals = this.getTotalsdByPlayID(booking.Play["ID"], parseInt(booking.Play["Seats"], 10));
                                     return (
                                         <tr key={booking.Id}>
                                             <td style={{ background: (new Date(booking.Play["DateTime"]) <= new Date() ? "#eaeaea" : "") }}>{(new Date(booking.Play["DateTime"])).format('dd-MM-yyyy HH:mm')}</td>
@@ -545,13 +544,13 @@ export class TicketTable extends React.Component<TicketTableProps, TicketTableSt
                                                             onChange={(event: React.FormEvent<HTMLDivElement>, option?: IDropdownOption, index?: number) => {
                                                                 this.setState({ dialogBookingStatus: option.text });
                                                             }}
-                                                            disabled={(booking.Status == "Відхилено" && Totals.Seats > Totals.Free) || new Date(booking.Play["DateTime"]) <= new Date() }
+                                                            disabled={(booking.Status == "Відхилено" && booking.Seats > Totals.Free) || new Date(booking.Play["DateTime"]) < new Date()}
                                                         />
                                                         <TextField label="У разі відхилення замовлення причину можна вказати у коментарі:"
                                                             multiline rows={6}
                                                             defaultValue={this.state.dialogBookingNotes}
                                                             resizable={false}
-                                                            disabled={(booking.Status == "Відхилено" && Totals.Seats > Totals.Free) || new Date(booking.Play["DateTime"]) <= new Date()}
+                                                            disabled={(booking.Status == "Відхилено" && booking.Seats > Totals.Free) || new Date(booking.Play["DateTime"]) < new Date()}
                                                             onChange={(event, newvalue) => {
                                                                 this.setState({ dialogBookingNotes: newvalue });
                                                             }}
@@ -604,8 +603,16 @@ export class TicketTable extends React.Component<TicketTableProps, TicketTableSt
     };
 
     private _saveDialog = (booking: TicketTableMyBookings): void => {
+
         this._closeDialog();
-        this._onStatusChange(booking, this.state.dialogBookingStatus, this.state.dialogBookingNotes);
+
+        if (this.state.dialogBookingStatus == "Відхилено" && (!this.state.dialogBookingNotes || this.state.dialogBookingNotes.trim().length == 0)) {
+            this.setState({ ErrorMessage: "Потрібно вказати причину відхилення замовлення!" });
+        }
+        else {
+            this.setState({ ErrorMessage: "" });
+            this._onStatusChange(booking, this.state.dialogBookingStatus, this.state.dialogBookingNotes);
+        }
     };
 
     private _onPeopleFilterChanged = (filterText: string, currentPersonas: IPersonaProps[], limitResults?: number): IPersonaProps[] | Promise<IPersonaProps[]> => {
@@ -1035,14 +1042,14 @@ export class TicketTable extends React.Component<TicketTableProps, TicketTableSt
         };
 
         if (id >= 0) {
-            sp.web.lists.getByTitle("Playsparam").items.getById(id)
+            sp.web.lists.getByTitle("parameters").items.getById(id)
                 .update(subparams).then(() => {
                     this.setState({ showPanel: false, params: params });
                     this.populatePlays();
                 });
         }
         else {
-            sp.web.lists.getByTitle("Playsparam").items
+            sp.web.lists.getByTitle("parameters").items
                 .add(subparams).then((res: ItemAddResult) => {
                     params.id = res.data["ID"];
                     this.setState({ showPanel: false, params: params });
@@ -1079,152 +1086,200 @@ export class TicketTable extends React.Component<TicketTableProps, TicketTableSt
         return temp;
     }
 
-    private populatePlays() {
+    private populatePlays(playId?: string): Promise<any>{
 
-        var promiseU: Promise<any> = sp.web.currentUser.get();
-        var promiseP: Promise<BasePermissions> = sp.web.lists.getByTitle("Plays").getCurrentUserEffectivePermissions();
-        var promiseB: Promise<BasePermissions> = sp.web.lists.getByTitle("Booking").getCurrentUserEffectivePermissions();
-        var promiseJ: Promise<any> = sp.web.lists.getByTitle("Playsparam").items
-            .select("ID", "Title", "publishDate", "ticketCount", "monthCount", "managers/ID", "managers/Title", "managers/Name", "managers/EMail", "StatusChangedEmailText", "TicketsOrderedEmailText", "StatusChangedRejectedEmailText", "TicketsOrderedManagerEmailText", "StatusChangedEmailSubject", "TicketsOrderedEmailSubject", "StatusChangedRejectedEmailSubj", "TicketsOrderedManagerEmailSubj", "disableNotifications")
-            .expand("managers")
-            .orderBy("ID", false).get();
+        var message = "";
 
-        // 1) user, permissions, params
-        Promise.all([promiseU, promiseP, promiseB, promiseJ])
-            .then(([user, playsPerm, bookingPerm, paramsArr]: [CurrentUser, BasePermissions, BasePermissions, any[]]) => {
-                // default params on Mount!
-                var loaded_params: TicketTableParams = this.state.params;
+        let p = new Promise((resolve, reject) => {
 
-                if (paramsArr && paramsArr.length > 0) {
-                    const { ID, publishDate, monthCount, ticketCount, managers,
-                        StatusChangedEmailText,
-                        TicketsOrderedEmailText,
-                        StatusChangedRejectedEmailText,
-                        TicketsOrderedManagerEmailText,
-                        TicketsOrderedEmailSubject,
-                        TicketsOrderedManagerEmailSubj,
-                        StatusChangedEmailSubject,
-                        StatusChangedRejectedEmailSubj,
-                        disableNotifications} = paramsArr[0];
+            var promiseU: Promise<any> = sp.web.currentUser.get();
+            var promiseP: Promise<BasePermissions> = sp.web.lists.getByTitle("Plays").getCurrentUserEffectivePermissions();
+            var promiseB: Promise<BasePermissions> = sp.web.lists.getByTitle("Booking").getCurrentUserEffectivePermissions();
+            var promiseJ: Promise<any> = sp.web.lists.getByTitle("parameters").items
+                .select("ID", "Title", "publishDate", "ticketCount", "monthCount", "managers/ID", "managers/Title", "managers/Name", "managers/EMail", "StatusChangedEmailText", "TicketsOrderedEmailText", "StatusChangedRejectedEmailText", "TicketsOrderedManagerEmailText", "StatusChangedEmailSubject", "TicketsOrderedEmailSubject", "StatusChangedRejectedEmailSubj", "TicketsOrderedManagerEmailSubj", "disableNotifications")
+                .expand("managers")
+                .orderBy("ID", false)
+                .get();
 
-                    loaded_params = {
-                        id: ID,
-                        publishDate: new Date(publishDate),
-                        monthCount,
-                        ticketCount,
-                        managers: managers ? managers : [],
-                        TicketsOrderedEmailSubject,
-                        TicketsOrderedManagerEmailSubject: TicketsOrderedManagerEmailSubj,
-                        StatusChangedEmailSubject,
-                        StatusChangedRejectedEmailSubject: StatusChangedRejectedEmailSubj,
-                        TicketsOrderedEmailText,
-                        TicketsOrderedManagerEmailText,
-                        StatusChangedEmailText,
-                        StatusChangedRejectedEmailText,
-                        TempEmailText1: TicketsOrderedEmailText,
-                        TempEmailText2: TicketsOrderedManagerEmailText,
-                        TempEmailText3: StatusChangedEmailText,
-                        TempEmailText4: StatusChangedRejectedEmailText,
-                        TempEmailSubject1: TicketsOrderedEmailSubject,
-                        TempEmailSubject2: TicketsOrderedManagerEmailSubj,
-                        TempEmailSubject3: StatusChangedEmailSubject,
-                        TempEmailSubject4: StatusChangedRejectedEmailSubj,
-                        disableNotifications
-                    };
-                }
+            // 1) user, permissions, params
+            Promise.all([promiseU, promiseP, promiseB, promiseJ])
+                .then(([user, playsPerm, bookingPerm, paramsArr]: [CurrentUser, BasePermissions, BasePermissions, any[]]) => {
+                    // default params on Mount!
+                    var loaded_params: TicketTableParams = this.state.params;
 
-                const today = new Date();
-                const archiveDate: string = this.monthAdd(new Date(), -loaded_params.monthCount).toISOString();
+                    if (paramsArr && paramsArr.length > 0) {
+                        const { ID, publishDate, monthCount, ticketCount, managers,
+                            StatusChangedEmailText,
+                            TicketsOrderedEmailText,
+                            StatusChangedRejectedEmailText,
+                            TicketsOrderedManagerEmailText,
+                            TicketsOrderedEmailSubject,
+                            TicketsOrderedManagerEmailSubj,
+                            StatusChangedEmailSubject,
+                            StatusChangedRejectedEmailSubj,
+                            disableNotifications } = paramsArr[0];
 
-                //var promiseA: Promise<any> = sp.web.lists.getByTitle("Plays").items
-                //    .select("ID", "Title", "Seats", "DateTime", "Link", "Comments")
-                //    .filter("DateTime lt datetime'" + today.toISOString() + "' and DateTime ge datetime'" + archiveDate + "'")
-                //    .orderBy("DateTime", true)
-                //    .get();
+                        loaded_params = {
+                            id: ID,
+                            publishDate: new Date(publishDate),
+                            monthCount,
+                            ticketCount,
+                            managers: managers ? managers : [],
+                            TicketsOrderedEmailSubject,
+                            TicketsOrderedManagerEmailSubject: TicketsOrderedManagerEmailSubj,
+                            StatusChangedEmailSubject,
+                            StatusChangedRejectedEmailSubject: StatusChangedRejectedEmailSubj,
+                            TicketsOrderedEmailText,
+                            TicketsOrderedManagerEmailText,
+                            StatusChangedEmailText,
+                            StatusChangedRejectedEmailText,
+                            TempEmailText1: TicketsOrderedEmailText,
+                            TempEmailText2: TicketsOrderedManagerEmailText,
+                            TempEmailText3: StatusChangedEmailText,
+                            TempEmailText4: StatusChangedRejectedEmailText,
+                            TempEmailSubject1: TicketsOrderedEmailSubject,
+                            TempEmailSubject2: TicketsOrderedManagerEmailSubj,
+                            TempEmailSubject3: StatusChangedEmailSubject,
+                            TempEmailSubject4: StatusChangedRejectedEmailSubj,
+                            disableNotifications
+                        };
+                    }
 
-                var promiseI: Promise<any[]> = sp.web.lists.getByTitle("Plays").items
-                    .select("ID", "Title", "Seats", "DateTime", "Link", "Comments")
-                    .filter("DateTime ge datetime'" + this.state.playsFromDate.toISOString() + "'")
-                    .orderBy("DateTime", true)
-                    .get();
 
-                var promiseX: Promise<any[]> = sp.web.lists.getByTitle("Booking").items
-                    .select("ID", "Title", "Play/ID", "Play/DateTime", "WhoBooked/ID", "WhoBooked/Title", "WhoBooked/Name", "WhoBooked/EMail", "Seats", "Status", "Notes", "GivenAway", "Author/ID", "Author/Title")
-                    .expand("WhoBooked", "Play", "Author")
-                    .filter("Play/DateTime ge datetime'" + this.state.playsFromDate.toISOString() + "'")
-                    .get()
+                    const today = new Date();
+                    const archiveDate: string = this.monthAdd(new Date(), -loaded_params.monthCount).toISOString();
 
-                var hasManagePermission: boolean = sp.web.hasPermissions(playsPerm, PermissionKind.ManagePermissions);
+                    //var promiseA: Promise<any> = sp.web.lists.getByTitle("Plays").items
+                    //    .select("ID", "Title", "Seats", "DateTime", "Link", "Comments")
+                    //    .filter("DateTime lt datetime'" + today.toISOString() + "' and DateTime ge datetime'" + archiveDate + "'")
+                    //    .orderBy("DateTime", true)
+                    //    .get();
 
-                if (loaded_params.publishDate > today && !hasManagePermission) {
-                    promiseI = new Promise<any[]>((resolve) => { resolve([]) });
-                    promiseX = new Promise<any[]>((resolve) => { resolve([]) });
-                }
+                    // Plays
+                    var filterI: string = "DateTime ge datetime'" + this.state.playsFromDate.toISOString() + "'";
+                    if (playId) {
+                        filterI += " and ID eq " + playId;
+                    }
+                    var promiseI: Promise<any[]> = sp.web.lists.getByTitle("Plays").items
+                        .select("ID", "Title", "Seats", "DateTime", "Link", "Comments")
+                        .filter(filterI)
+                        .orderBy("DateTime", true)
+                        .get();
 
-                // 2) plays
-                Promise.all([promiseI, promiseX])
-                    .then(([plays, bookingArr]) => {
-                        var propsCollection: TicketTableRowProps[] = plays.map((play: any, i: number) => {
-                            return {
-                                key: play.ID,
-                                user: user,
-                                bookingPerm: bookingPerm,
+                    // Booking
+                    var filterX: string = "Play/DateTime ge datetime'" + this.state.playsFromDate.toISOString() + "'";
+                    if (playId) {
+                        filterX += " and Play/ID eq " + playId;
+                    }
+                    var promiseX: Promise<any[]> = sp.web.lists.getByTitle("Booking").items
+                        .select("ID", "Title", "Play/ID", "Play/DateTime", "WhoBooked/ID", "WhoBooked/Title", "WhoBooked/Name", "WhoBooked/EMail", "Seats", "Status", "Notes", "Author/ID", "Author/Title")
+                        .expand("WhoBooked", "Play", "Author")
+                        .filter(filterX)
+                        .get();
+
+                    var hasManagePermission: boolean = sp.web.hasPermissions(playsPerm, PermissionKind.ManagePermissions);
+
+                    if (loaded_params.publishDate > today && !hasManagePermission) {
+                        promiseI = new Promise<any[]>((resolve) => { resolve([]); });
+                        promiseX = new Promise<any[]>((resolve) => { resolve([]); });
+                    }
+
+                    // 2) plays
+                    Promise.all([promiseI, promiseX])
+                        .then(([plays, bookingArr]) => {
+                            var propsCollection: TicketTableRowProps[] = plays.map((play: any, i: number) => {
+                                return {
+                                    key: play.ID,
+                                    user: user,
+                                    bookingPerm: bookingPerm,
+                                    playsPerm: playsPerm,
+                                    params: loaded_params,
+                                    fields: {
+                                        id: play.ID,
+                                        DateTime: play.DateTime,
+                                        Title: play.Title,
+                                        Link: play.Link,
+                                        Seats: play.Seats,
+                                        Comments: play.Comments,
+                                        etag: play["odata.etag"]
+                                    },
+                                    rowRef: React.createRef<TicketTableRow>(),
+                                    isManagerForm: hasManagePermission,
+                                    mode: this.state.mode,
+                                    bookingArr: bookingArr
+                                        .filter(booking => {
+                                            return booking.Play["ID"] == play.ID;
+                                        })
+                                        .map(booking => {
+                                            return {
+                                                ID: booking.ID,
+                                                Status: booking.Status,
+                                                Notes: booking.Notes,
+                                                Seats: booking.Seats,
+                                                WhoBooked: {
+                                                    ID: booking.WhoBooked.ID,
+                                                    Title: booking.WhoBooked.Title,
+                                                    Name: booking.WhoBooked.Name,
+                                                    EMail: booking.WhoBooked.EMail,
+                                                    OrganizationalStructure: ""
+                                                },
+                                                etag: booking["odata.etag"]
+                                            };
+                                        })
+                                };
+                            });
+
+                            var propsCollection1 = [];
+                            var propsCollection2 = propsCollection;
+                            if (playId) {
+                                propsCollection1 = this.state.RowPropsCollection.filter(row => {
+                                    return row.fields.id.toString() != playId;
+                                });
+
+                                propsCollection2 = this.state.RowPropsCollection.map(row => {
+                                    return row.fields.id.toString() == playId ? propsCollection[0] : row;
+                                });
+                            }
+
+                            this.setState({
+                                RowPropsCollection: propsCollection1
+                            });
+
+                            this.setState({
+                                RowPropsCollection: propsCollection2,
                                 playsPerm: playsPerm,
+                                bookingPerm: bookingPerm,
+                                user: user,
+                                Message: message,
+                                ErrorMessage: "",
+                                SuccessMessage: "",
                                 params: loaded_params,
-                                fields: {
-                                    id: play.ID,
-                                    DateTime: play.DateTime,
-                                    Title: play.Title,
-                                    Link: play.Link,
-                                    Seats: play.Seats,
-                                    Comments: play.Comments,
-                                    etag: play["odata.etag"]
-                                },
-                                rowRef: React.createRef<TicketTableRow>(),
-                                isManagerForm: hasManagePermission,
-                                mode: this.state.mode,
-                                bookingArr: bookingArr
-                                    .filter(booking => {
-                                        return booking.Play["ID"] == play.ID;
-                                    })
-                                    .map(booking => {
-                                        return {
-                                            ID: booking.ID,
-                                            Status: booking.Status,
-                                            Notes: booking.Notes,
-                                            GivenAway: booking.GivenAway,
-                                            Seats: booking.Seats,
-                                            WhoBooked: {
-                                                ID: booking.WhoBooked.ID,
-                                                Title: booking.WhoBooked.Title,
-                                                Name: booking.WhoBooked.Name,
-                                                EMail: booking.WhoBooked.EMail,
-                                                OrganizationalStructure: ""
-                                            },
-                                            etag: booking["odata.etag"]
-                                        };
+                                isManagerForm: hasManagePermission
+                            });
+
+                            //this.forceUpdate();
+
+                            Promise.all([this.populateMyBookings(), this.populateAllBookings()])
+                                .then((result) => {
+                                    resolve();
                                 })
-                            };
+                                .catch((err) => {
+                                    this.DisplayErrorMessage(err);
+                                    reject(err);
+                                });
+                        })
+                        .catch((err) => {
+                            this.DisplayErrorMessage(err);
+                            reject(err);
                         });
+                })
+                .catch((err) => {
+                    this.DisplayErrorMessage(err);
+                    reject(err);
+                });
+        });
 
-                        this.setState({
-                            RowPropsCollection: propsCollection,
-                            playsPerm: playsPerm,
-                            bookingPerm: bookingPerm,
-                            user: user,
-                            Message: "",
-                            ErrorMessage: "",
-                            SuccessMessage: "",
-                            params: loaded_params,
-                            isManagerForm: hasManagePermission
-                        });
-
-                        this.populateMyBookings();
-                        this.populateAllBookings();
-                    })
-                    .catch(this.catchError.bind(this));
-            })
-            .catch(this.catchError.bind(this));
+        return p;
     }
 
     private populateMyBookings = (): Promise<any> => {
@@ -1233,7 +1288,7 @@ export class TicketTable extends React.Component<TicketTableProps, TicketTableSt
         const archiveDate: string = this.monthAdd(this.state.playsFromDate, -this.state.params.monthCount).toISOString();
 
         var promiseJ: Promise<any> = sp.web.lists.getByTitle("Booking").items
-            .select("Id", "Title", "Comments", "Play/ID", "Play/Title", "Play/Link", "Play/DateTime", "WhoBooked/ID", "WhoBooked/Title", "WhoBooked/Name", "WhoBooked/EMail", "Seats", "Status", "Notes", "GivenAway", "Author/ID", "Author/Title")
+            .select("Id", "Title", "Play/ID", "Play/Title", "Play/Link", "Play/DateTime", "WhoBooked/ID", "WhoBooked/Title", "WhoBooked/Name", "WhoBooked/EMail", "Seats", "Status", "Notes", "Author/ID", "Author/Title")
             .expand("WhoBooked", "Play", "Author")
             .filter("WhoBooked/ID eq " + this.state.user["Id"]) // + " and (Play/DateTime ge datetime'" + archiveDate + encodeURI("' or Status eq 'В очікуванні')"))
             .get();
@@ -1252,7 +1307,7 @@ export class TicketTable extends React.Component<TicketTableProps, TicketTableSt
         const filterDate = date ? date : this.state.allbookingsFromDate;
 
         var promiseK: Promise<any> = sp.web.lists.getByTitle("Booking").items
-            .select("Id", "Title", "Comments", "Play/ID", "Play/Title", "Play/Link", "Play/Seats", "Play/DateTime", "WhoBooked/ID", "WhoBooked/Title", "WhoBooked/Name", "WhoBooked/EMail", "Seats", "Status", "Notes", "GivenAway", "Author/ID", "Author/Title")
+            .select("Id", "Title", "Play/ID", "Play/Title", "Play/Link", "Play/Seats", "Play/DateTime", "WhoBooked/ID", "WhoBooked/Title", "WhoBooked/Name", "WhoBooked/EMail", "Seats", "Status", "Notes", "Author/ID", "Author/Title")
             .top(5000)
             .expand("WhoBooked", "Play", "Author")
             .filter("Play/DateTime ge datetime'" + filterDate.toISOString() + "'")  // + encodeURI("' or Status eq 'В очікуванні'")
@@ -1267,7 +1322,7 @@ export class TicketTable extends React.Component<TicketTableProps, TicketTableSt
             });
 
             var promiseD: Promise<any> = sp.web.lists.getByTitle("Booking").items
-                .select("Id", "Title", "Comments", "Play/ID", "Play/Title", "Play/Link", "Play/Seats", "Play/DateTime", "WhoBooked/ID", "WhoBooked/Title", "WhoBooked/Name", "WhoBooked/EMail", "Seats", "Status", "Notes", "GivenAway", "Author/ID", "Author/Title")
+                .select("Id", "Title", "Play/ID", "Play/Title", "Play/Link", "Play/Seats", "Play/DateTime", "WhoBooked/ID", "WhoBooked/Title", "WhoBooked/Name", "WhoBooked/EMail", "Seats", "Status", "Notes", "Author/ID", "Author/Title")
                 .top(5000)
                 .expand("WhoBooked", "Play", "Author")
                 .orderBy("Play/DateTime", false)
@@ -1308,7 +1363,7 @@ export class TicketTable extends React.Component<TicketTableProps, TicketTableSt
 
             items.reverse().map(item => {
                 sp.web.lists.getByTitle("Booking").items
-                    .select("Id", "Title", "Comments", "Play/ID", "Play/Title", "Play/Link", "Play/Seats", "Play/DateTime", "WhoBooked/ID", "WhoBooked/Title", "WhoBooked/Name", "WhoBooked/EMail", "Seats", "Status", "Notes", "GivenAway", "Author/ID", "Author/Title")
+                    .select("Id", "Title", "Play/ID", "Play/Title", "Play/Link", "Play/Seats", "Play/DateTime", "WhoBooked/ID", "WhoBooked/Title", "WhoBooked/Name", "WhoBooked/EMail", "Seats", "Status", "Notes", "Author/ID", "Author/Title")
                     .expand("WhoBooked", "Play", "Author")
                     .filter("WhoBooked/ID eq " + item.WhoBooked["ID"] + encodeURI(" and Status eq 'Затверджено'"))
                     .orderBy("Play/DateTime", true)
@@ -1356,7 +1411,7 @@ export class TicketTable extends React.Component<TicketTableProps, TicketTableSt
         return { Free: Free, Ordered: Ordered, Rejected: Rejected, Seats: Seats };
     }
 
-    private catchError(err) {
+    private DisplayErrorMessage(err) {
         this.setState({ Message: "", SuccessMessage: "", ErrorMessage: "Помилка:" + JSON.stringify(err) });
     }
 
@@ -1366,18 +1421,37 @@ export class TicketTable extends React.Component<TicketTableProps, TicketTableSt
         var months: number = this.state.params.monthCount;
 
         var p3: Promise<any[]> = new Promise<any[]>((resolve) => { resolve([]); });
+        var p4: Promise<any[]> = new Promise<any[]>((resolve) => { resolve([]); });
 
         if (booking.Status == "Відхилено" && new_status != "Відхилено") {
             p3 = sp.web.lists.getByTitle("Booking").items
-                .select("ID", "Title", "Play/ID", "Play/DateTime", "WhoBooked/ID", "WhoBooked/Title", "WhoBooked/Name", "WhoBooked/EMail", "Seats", "Status", "Notes", "GivenAway", "Author/ID", "Author/Title")
+                .select("ID", "Title", "Play/ID", "Play/DateTime", "WhoBooked/ID", "WhoBooked/Title", "WhoBooked/Name", "WhoBooked/EMail", "Seats", "Status", "Notes", "Author/ID", "Author/Title")
                 .expand("WhoBooked", "Play", "Author")
                 .filter("WhoBooked/ID eq " + booking.WhoBooked["ID"] + " and Play/DateTime ge datetime'" + this.monthAdd(new Date(), -months).toISOString() + encodeURI("' and Status ne 'Відхилено'"))
                 .get();
         }
+        else if (new_status == "Затверджено") {
+            p3 = sp.web.lists.getByTitle("Booking").items
+                .select("ID", "Title", "Play/ID", "Play/Seats", "Seats", "Status", "Notes")
+                .expand("Play")
+                .filter("Play/ID eq " + booking.Play.ID + encodeURI(" and Status eq 'Затверджено'"))
+                .get();
 
-        p3.then((items: any[]) => {
-            if (items.length > 0) {
+            p4 = sp.web.lists.getByTitle("Plays").items
+                .select("ID", "Seats")
+                .filter("ID eq " + booking.Play.ID)
+                .get();
+        }
+
+        Promise.all([p3, p4]).then(([items3, items4]: [any[], any[]]) => {
+            if (booking.Status == "Відхилено" && new_status != "Відхилено" && items3.length > 0) {
                 this.setState({ ErrorMessage: "Не можна змінювати статус замовлення. За заданний період (" + months + " місяців) вже є замовлення..." });
+            }
+            else if (new_status == "Затверджено" &&
+                items4.reduce((sum, item) => { sum + parseInt(item["Seats"]) }, 0) -
+                items3.reduce((sum, item) => { sum + parseInt(item["Seats"]) }, 0) < parseInt(booking.Seats)) {
+                
+                this.setState({ ErrorMessage: "Не вдалося затвердити! Помилка в кількості квитків." });
             }
             else {
                 var p1: Promise<ItemUpdateResult> = sp.web.lists.getByTitle("Plays").items.getById(booking.Play.ID)
@@ -1466,7 +1540,14 @@ export class TicketTable extends React.Component<TicketTableProps, TicketTableSt
             row._onDeleteBookingClicked(bookingId);
         }
         else {
-            this.setState({ ErrorMessage: "Error 5433!" });
+            sp.web.lists.getByTitle("Booking").items.getById(parseInt(bookingId, 10))
+                .delete()
+                .then(res => {
+                    this.populateMyBookings().then((bookings: any[]) => {});
+                })
+                .catch((err1: any) => {
+                    this.setState({ ErrorMessage: "Дані, можливо, змінилися. Спробуйте перезавантажити таблицю!" });
+                });
         }
     }
 
@@ -1483,6 +1564,16 @@ export class TicketTable extends React.Component<TicketTableProps, TicketTableSt
         return row;
     }
 
+    private findTicketTableRowByPlayId(playId: string): TicketTableRow {
+        var row: TicketTableRow = null;
+        this.state.RowPropsCollection.map(rowProps => {
+            if (rowProps.fields.id.toString() == playId) {
+                row = rowProps.rowRef.current;
+            }
+        });
+        return row;
+    }
+
     private BookingChangedCallback(playId: string) {
         this.populateMyBookings();
         this.populateAllBookings();
@@ -1491,6 +1582,16 @@ export class TicketTable extends React.Component<TicketTableProps, TicketTableSt
     private StatusChangedCallback(playId: string) {
         this.populateMyBookings();
         this.populateAllBookings();
+    }
+
+    private OrderAttemptFailed(playId: string, attempt: number) {
+        this.populatePlays(playId)
+            .then(() => {
+                var row: TicketTableRow = this.findTicketTableRowByPlayId(playId);
+                if (row) {
+                    row._onOrderTicketsClicked(attempt + 1);
+                }
+            });
     }
 
     private MessageCallback(msg: string, err: string, scs: string) {

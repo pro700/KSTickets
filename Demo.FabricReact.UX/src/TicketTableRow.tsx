@@ -32,7 +32,6 @@ export interface TicketTableRowBooking {
     ID: string,
     Status: string,
     Notes: string,
-    GivenAway: any,
     Seats: number,
     WhoBooked: {
         ID: string,
@@ -63,6 +62,7 @@ export interface TicketTableRowProps {
     rowRef?: React.RefObject<TicketTableRow>,
     BookingChangedCallback?: (playId: string) => {},
     StatusChangedCallback?: (playId: string) => {},
+    OrderAttemptFailed?: (playId: string, attempt: number) => {},
     MessageCallback?: (msg: string, err: string, scs: string) => {},
     isMangerForm?: boolean,
     mode?: TicketTableMode,
@@ -160,10 +160,10 @@ export class TicketTableRow extends React.Component<TicketTableRowProps, TicketT
                 <td>
                     {
                         this.state.loading && <Spinner size={SpinnerSize.medium} /> ||
-                        Free > 0 && (new Date(this.props.fields.DateTime)) >= (new Date()) &&
+                        /*Free > 0 &&*/ (new Date(this.props.fields.DateTime)) >= (new Date()) &&
                         <DefaultButton className="CommonButton OrderButton"
                             id={this.props.fields.id.toString()}
-                            onClick={this._onOrderTicketsClicked}
+                            onClick={() => { return this._onOrderTicketsClicked(1); }}
                             text="Замовити" />
                     }
                 </td>
@@ -295,7 +295,7 @@ export class TicketTableRow extends React.Component<TicketTableRowProps, TicketT
                 this.setState({ loading: true });
 
                 sp.web.lists.getByTitle("Booking").items
-                    .select("ID", "Title", "Play/ID", "WhoBooked/ID", "WhoBooked/Title", "WhoBooked/Name", "WhoBooked/EMail", "Seats", "Status", "Notes", "GivenAway", "Author/ID", "Author/Title")
+                    .select("ID", "Title", "Play/ID", "WhoBooked/ID", "WhoBooked/Title", "WhoBooked/Name", "WhoBooked/EMail", "Seats", "Status", "Notes", "Author/ID", "Author/Title")
                     .expand("WhoBooked", "Play", "Author")
                     .filter("Play/ID eq " + this.props.fields.id)
                     .get()
@@ -306,7 +306,6 @@ export class TicketTableRow extends React.Component<TicketTableRowProps, TicketT
                                 ID: booking.ID,
                                 Status: booking.Status,
                                 Notes: booking.Notes,
-                                GivenAway: booking.GivenAway,
                                 Seats: booking.Seats,
                                 WhoBooked: {
                                     ID: booking.WhoBooked.ID,
@@ -359,7 +358,7 @@ export class TicketTableRow extends React.Component<TicketTableRowProps, TicketT
 
         if (booking.Status == "Відхилено" && new_status != "Відхилено") {
             p3 = sp.web.lists.getByTitle("Booking").items
-                .select("ID", "Title", "Play/ID", "Play/DateTime", "WhoBooked/ID", "WhoBooked/Title", "WhoBooked/Name", "WhoBooked/EMail", "Seats", "Status", "Notes", "GivenAway", "Author/ID", "Author/Title")
+                .select("ID", "Title", "Play/ID", "Play/DateTime", "WhoBooked/ID", "WhoBooked/Title", "WhoBooked/Name", "WhoBooked/EMail", "Seats", "Status", "Notes", "Author/ID", "Author/Title")
                 .expand("WhoBooked", "Play", "Author")
                 .filter("WhoBooked/ID eq " + this.props.user["Id"] + " and Play/DateTime ge datetime'" + this.monthAdd(new Date(), -months).toISOString() + encodeURI("' and Status ne 'Відхилено'"))
                 .get();
@@ -438,7 +437,7 @@ export class TicketTableRow extends React.Component<TicketTableRowProps, TicketT
     }
     */
 
-    private _onOrderTicketsClicked = (event): void => {
+    public _onOrderTicketsClicked = (attempt: number): void => {
 
         this.setState({ error: "" });
         this.props.MessageCallback("", "", "");
@@ -461,7 +460,7 @@ export class TicketTableRow extends React.Component<TicketTableRowProps, TicketT
         var months: number = this.props.params.monthCount;
 
         sp.web.lists.getByTitle("Booking").items
-            .select("ID", "Title", "Play/ID", "Play/DateTime", "WhoBooked/ID", "WhoBooked/Title", "WhoBooked/Name", "WhoBooked/EMail", "Seats", "Status", "Notes", "GivenAway", "Author/ID", "Author/Title")
+            .select("ID", "Title", "Play/ID", "Play/DateTime", "WhoBooked/ID", "WhoBooked/Title", "WhoBooked/Name", "WhoBooked/EMail", "Seats", "Status", "Notes", "Author/ID", "Author/Title")
             .expand("WhoBooked", "Play", "Author")
             .filter("WhoBooked/ID eq " + this.props.user["Id"] + " and Play/DateTime ge datetime'" + this.monthAdd(new Date(), -months).toISOString() + encodeURI("' and Status ne 'Відхилено'"))
             .get()
@@ -471,7 +470,8 @@ export class TicketTableRow extends React.Component<TicketTableRowProps, TicketT
                     this.props.MessageCallback("", "За заданний період (" + months + " місяців) вже є замовлення...", "");
                 }
                 else {
-                    // Ok/ No orders in period 
+
+                        // Ok/ No orders in period 
                     sp.web.lists.getByTitle("Plays").items.getById(this.props.fields.id)
                         .update({ Title: this.props.fields.Title }, this.state.etag)
                         .then((res1: ItemUpdateResult) => {
@@ -524,7 +524,7 @@ export class TicketTableRow extends React.Component<TicketTableRowProps, TicketT
                                         .replace("%Лінк", this.props.fields.Link)
                                         .replace("%Замовник", this.props.user["Title"]);
 
-                                    var emails: string[] = this.props.params.managers.map(manager => { return manager["EMail"];});
+                                    var emails: string[] = this.props.params.managers.map(manager => { return manager["EMail"]; });
 
                                     if (!this.props.params.disableNotifications) {
                                         sp.utility.sendEmail({
@@ -538,11 +538,16 @@ export class TicketTableRow extends React.Component<TicketTableRowProps, TicketT
                                 });
                         })
                         .catch((err1: any) => {
-                            // etag invalid!
-                            this.load().then(bookings => {
-                                this.setState({ error: "Не вдалося забронювати квитки. Дані, можливо, змінилися. Спробуйте перезавантажити таблицю!<br/> Або немає прав на внесення змін." });
-                                this.props.MessageCallback("", "Не вдалося забронювати квитки. Дані, можливо, змінилися. Спробуйте перезавантажити таблицю!<br/> Або немає прав на внесення змін.", "");
-                            });
+                            if (Free > to_order && attempt < 10) {
+                                this.props.OrderAttemptFailed(this.props.fields.id.toString(), attempt);
+                            }
+                            else {
+                                // etag invalid!
+                                this.load().then(bookings => {
+                                    this.setState({ error: "Не вдалося забронювати квитки." });
+                                    this.props.MessageCallback("", "Не вдалося забронювати квитки.", "");
+                                });
+                            }
                         });
                 }
             });

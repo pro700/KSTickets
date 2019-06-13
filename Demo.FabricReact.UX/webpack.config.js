@@ -33,7 +33,7 @@ module.exports = {
         credentialOptions: {
             /* See https://github.com/s-KaiNet/node-sp-auth#params for authentication options */
             username: 'sergiy.sokol',
-            password: 'Sok%asw8',
+            password: 'Sok%asw7',
             domain: 'KYIVSTAR.UA'
         },
         fileOptions: {
