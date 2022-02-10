@@ -34,7 +34,7 @@
     "core-js": "^2.6.5",
     "css-loader": "^0.28.11",
     "es6-promise": "^4.2.4",
-    "node-sass": "^4.8.3",
+    "node-sass": "^7.0.0",
     "office-ui-fabric-react": "^6.157.0",
     "raf": "^3.4.1",
     "react-hot-loader": "^4.1.1",
